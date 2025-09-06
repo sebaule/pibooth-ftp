@@ -16,6 +16,8 @@ def pibooth_configure(cfg):
     cfg.add_option(SECTION, 'public_url', '', "Public base URL to access photos (ex: https://mysite.com/photos)")
     cfg.add_option(SECTION, 'reduce_url_activated', False, "Activate or deactivate URL reduction")
     cfg.add_option(SECTION, 'reduce_url', 'https://is.gd/create.php?format=json&url={url}', "Service URL for reducing links (use {url} as placeholder)")
+    cfg.add_option(SECTION, 'protocol', 'ftp', "Upload protocol: 'ftp' or 'http'")
+    cfg.add_option(SECTION, 'http_url', '', "HTTP endpoint URL for photo upload (ex: https://mysite.com/upload.php)")
 
 def get_ftp_cfg(cfg, key, default=None):
     return cfg.get(SECTION, key, fallback=default)
@@ -52,18 +54,31 @@ def state_finish_enter(cfg, app):
     gif_path = getattr(app, 'gif_path', None)
     jpg_path = getattr(app, 'previous_picture_file', None)
     upload_file = gif_path if gif_path and os.path.exists(gif_path) else jpg_path
+    protocol = get_ftp_cfg(cfg, 'protocol', 'ftp').lower()
+
 
     if not upload_file:
         app.previous_picture_url = ""
         return
 
     name = os.path.basename(upload_file)
-    remote_path = f"{app.ftp_remote_dir.rstrip('/')}/{name}"
 
-    # Upload FTP en binaire
-    with open(upload_file, 'rb') as fp:
-        app.ftp.storbinary(f'STOR {remote_path}', fp, 1024)
-    app.previous_picture_url = f"{app.ftp_public_url.rstrip('/')}/{name}"
+    if protocol == 'ftp':
+        remote_path = f"{app.ftp_remote_dir.rstrip('/')}/{name}"
+        with open(upload_file, 'rb') as fp:
+            app.ftp.storbinary(f'STOR {remote_path}', fp, 1024)
+        app.previous_picture_url = f"{app.ftp_public_url.rstrip('/')}/{name}"
+
+    elif protocol == 'http':
+        http_url = get_ftp_cfg(cfg, 'http_url')
+        with open(upload_file, 'rb') as fp:
+            files = {'file': (name, fp)}
+            response = requests.post(http_url, files=files)
+            if response.status_code == 200:
+                # Suppose que le serveur retourne l'URL publique
+                app.previous_picture_url = response.text.strip()
+            else:
+                app.previous_picture_url = ""
 
     # Réduction d'URL si activée
     if cfg.getboolean(SECTION, 'reduce_url_activated', fallback=False):

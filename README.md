@@ -48,6 +48,14 @@ Here below the new configuration options available in the `pibooth`_ configurati
     # URL shortening service (must contain {url})
     reduce_url = https://is.gd/create.php?format=json&url={url}
 
+    # HTTP endpoint URL for photo upload (ex: https://mysite.com/upload.php)
+    http_url = https://mysite.com/upload.php
+
+    # Upload protocol: 'ftp' or 'http'
+    protocol = ftp
+
+
+
 
 .. note:: Edit the configuration by running the command ``pibooth --config``.
 
@@ -134,7 +142,8 @@ Y configurer ces valeurs :
 **Installation serveur Web : NGINX**
 
     sudo apt update
-    sudo apt install nginx
+    sudo apt install nginx -y
+    sudo apt install php-fpm php-cli php-curl php-xml php-mbstring php-zip php-gd -y
     sudo ln -s /home/ftpuser/photos /var/www/photos
     sudo nano /etc/nginx/sites-available/default
 
@@ -155,6 +164,14 @@ indiquer la configuration suivante :
 
             server_name _;
 
+            location /upload.php {
+                fastcgi_pass unix:/var/run/php/php8.2-fpm.sock; # A adapter à la version de PHP avec la commande (ls /var/run/php/)
+                fastcgi_index upload.php;
+                include fastcgi_params;
+                fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+                allow all;
+            }
+
             location /photos/ {
                     autoindex off;
                     # First attempt to serve request as file, then
@@ -169,6 +186,31 @@ indiquer la configuration suivante :
             }
 
     }
+
+Code source du fichier upload.php :
+
+    <?php
+    $target_dir = "photos/";
+    if (!file_exists($target_dir)) {
+        mkdir($target_dir, 0775, true);
+    }
+
+    if ($_FILES["file"]["error"] == UPLOAD_ERR_OK) {
+        $filename = basename($_FILES["file"]["name"]);
+        $target_file = $target_dir . $filename;
+
+        if (move_uploaded_file($_FILES["file"]["tmp_name"], $target_file)) {
+            // Retourne l'URL publique
+            echo "https://mysite.com/photos/" . urlencode($filename);
+        } else {
+            http_response_code(500);
+            echo "Upload failed";
+        }
+    } else {
+        http_response_code(400);
+        echo "No file uploaded";
+    }
+    ?>
 
     
 **Aide au debug**
